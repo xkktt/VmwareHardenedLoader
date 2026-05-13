@@ -693,7 +693,7 @@ extern "C"
 			if (!find)
 				break;
 
-			memset(find, '7', SigLength);
+			memset(find, '4', SigLength);
 			search_begin = (PUCHAR)find + SigLength;
 			search_size = (PUCHAR)FirmwareBuffer + FirmwareBufferLength - search_begin;
 		}
