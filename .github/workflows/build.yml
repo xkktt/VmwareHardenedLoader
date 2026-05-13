@@ -1,0 +1,28 @@
+name: Build VmLoader Driver (No Sign)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # 允许手动点一下编译
+
+jobs:
+  build:
+    runs-on: windows-2019
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      # 编译 x64 Release 驱动（不签名）
+      - name: Build VmLoader
+        run: |
+          msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v141
+
+      # 上传编译好的 sys 文件
+      - name: Upload Driver
+        uses: actions/upload-artifact@v4
+        with:
+          name: VmLoader-x64-Release
+          path: bin/x64/Release/vmloader.sys
