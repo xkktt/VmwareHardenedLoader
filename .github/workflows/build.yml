@@ -5,20 +5,31 @@ on:
     branches: [ main ]
   workflow_dispatch:  # 允许手动点一下编译
 
+# 全局环境变量：强制开启 Node.js 24 兼容模式，防止旧版 Action 报错
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: windows-latest
+    
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5  # 升级到 v5 以完美支持 Node.js 24
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
 
+      # 打印开发环境版本信息（方便排查环境问题）
+      - name: Check Environment
+        run: |
+          msbuild -version
+          where cl
+
       # 编译 x64 Release 驱动（不签名）
       - name: Build VmLoader
         run: |
-          msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v141
+          msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
 
       # 上传编译好的 sys 文件
       - name: Upload Driver
@@ -26,3 +37,4 @@ jobs:
         with:
           name: VmLoader-x64-Release
           path: bin/x64/Release/vmloader.sys
+          if-no-files-found: error  # 如果没找到文件则让构建失败，方便你及时发现问题
