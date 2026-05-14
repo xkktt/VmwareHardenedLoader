@@ -1,4 +1,4 @@
-name: Build VmLoader
+name: Build VmLoader Driver
 on:
   push:
     branches: [ master, main ]
@@ -12,13 +12,13 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
-          vsversion: 2022
 
-      - name: Compile driver
-        run: msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
+      - name: 编译驱动（强制包含 WDK10 内核头文件）
+        run: |
+          msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 "/p:AdditionalIncludeDirectories=C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\km"
 
-      - name: Upload driver
+      - name: 上传编译好的 sys
         uses: actions/upload-artifact@v4
         with:
-          name: VmLoader-x64
+          name: VmLoader-x64-Release
           path: bin/x64/Release/vmloader.sys
