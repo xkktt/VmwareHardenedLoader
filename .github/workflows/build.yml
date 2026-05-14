@@ -1,20 +1,55 @@
-name: Build VmLoader
+name: Build VmLoader x64
+
 on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: windows-2019
+    runs-on: windows-2022
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: recursive
 
-      - name: Build driver
-        run: msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v141
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+        with:
+          msbuild-architecture: x64
 
-      - name: Upload sys
+      - name: Install Windows Driver Kit 10
+        shell: powershell
+        run: |
+          choco install windowsdriverkit10 -y --no-progress
+
+      - name: Prepare output directory
+        shell: cmd
+        run: |
+          if not exist bin mkdir bin
+
+      - name: Build Release x64
+        shell: cmd
+        run: |
+          msbuild VmLoader.sln ^
+            /m ^
+            /t:Build ^
+            /p:Configuration=Release ^
+            /p:Platform=x64
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: VmLoader-x64
-          path: bin/x64/Release/vmloader.sys
+          name: VmLoader-Release-x64
+          path: |
+            bin/**
+            **/x64/Release/**/*.sys
+            **/x64/Release/**/*.pdb
+            **/x64/Release/**/*.lib
+            **/x64/Release/**/*.inf
+            **/x64/Release/**/*.cat
