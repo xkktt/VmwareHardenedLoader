@@ -16,24 +16,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      # 【修复】自动下载并安装最新版 WDK
-      - name: Install WDK
+      # 【核心修复】下载并挂载 Enterprise WDK (EWDK) 镜像
+      - name: Setup EWDK Environment
         run: |
-          # 1. 下载安装包
-          curl -L -o wdksetup.exe "https://go.microsoft.com/fwlink/?linkid=2249371"
+          # 1. 下载最新版 EWDK (ISO 格式，包含 VS Build Tools + SDK + WDK)
+          curl -L -o ewdk.iso "https://aka.ms/EWDKLatest"
           
-          # 2. 使用 Start-Process 并通过 -ArgumentList 传递参数
-          # -Wait 表示等待安装完成
-          # -ArgumentList "/quiet" 表示将 /quiet 作为参数传给 wdksetup.exe
-          Start-Process -FilePath "wdksetup.exe" -ArgumentList "/quiet" -Wait
+          # 2. 将 ISO 挂载为虚拟光驱 (盘符会自动分配，例如 D:)
+          $iso = Mount-DiskImage -ImagePath "ewdk.iso" -PassThru
+          $driveLetter = (Get-Volume -DiskImage $iso).DriveLetter
+          
+          # 3. 设置环境变量，让后续步骤能找到 EWDK 的启动脚本
+          echo "EWDK_DRIVE=$driveLetter`:" >> $env:GITHUB_ENV
+          echo "EWDK_LAUNCHER=$driveLetter`:\LaunchBuildEnv.cmd" >> $env:GITHUB_ENV
 
-      - name: Add MSBuild to PATH
-        uses: microsoft/setup-msbuild@v2
-
-      # 编译 x64 Release 驱动
-      - name: Build VmLoader
+      # 【核心修复】使用 EWDK 自带的 MSBuild 进行编译
+      - name: Build VmLoader with EWDK
         run: |
-          msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:WindowsSDKVersion=10.0.26100.0
+          # 调用 EWDK 的环境初始化脚本，并在该环境下执行 msbuild
+          # /p:Configuration=Release /p:Platform=x64 指定编译配置
+          cmd.exe /c "`"$env:EWDK_LAUNCHER`" && msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64"
 
       - name: Upload Driver
         uses: actions/upload-artifact@v4
