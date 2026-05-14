@@ -13,27 +13,44 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      # 【官方推荐】安装匹配的 Windows SDK + WDK
+      # 【微软官方认证】通过 VS Installer 安装 WDK
       - name: Install Windows Driver Kit (WDK)
         run: |
-          # 1. 下载 Windows SDK 安装程序（这是微软官方支持的直链）
-          curl -L -o winsdksetup.exe "https://go.microsoft.com/fwlink/p/?linkid=2233060"
-          
-          # 2. 静默安装指定版本的 WDK（关键：/features OptionId.WindowsDriverKit）
-          Start-Process winsdksetup.exe -ArgumentList `
-            "/features OptionId.WindowsDriverKit /version:10.0.26100.0 /quiet /norestart" `
-            -Wait -NoNewWindow
-          
-          # 3. 验证安装（检查 ntddk.h 是否存在）
-          if (-Not (Test-Path "C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\km\ntddk.h")) {
-            throw "WDK installation failed! ntddk.h is missing."
+          # 1. 创建 VS 安装配置文件（精准指定 WDK 组件）
+          $vsConfig = @"
+          {
+            "version": "1.0",
+            "components": [
+              "Microsoft.VisualStudio.Component.Windows11SDK.22621",  # Windows 11 SDK
+              "Microsoft.VisualStudio.Component.WindowsDriverKit"     # WDK 核心组件
+            ]
           }
-          Write-Host "WDK 10.0.26100.0 successfully installed"
+          "@
+          $vsConfig | Out-File -FilePath vsconfig.json -Encoding UTF8
 
-      # 使用标准 MSBuild 编译（现在系统已包含正确 WDK）
+          # 2. 使用 VS Installer 静默安装（微软唯一支持的自动化方式）
+          Write-Host "Starting WDK installation via Visual Studio Installer..."
+          & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vs_installer.exe" `
+            modify `
+            --installPath "C:\Program Files\Microsoft Visual Studio\2022\Community" `
+            --config vsconfig.json `
+            --passive `
+            --norestart
+          
+          # 3. 验证 WDK 关键文件是否存在
+          $wdkPath = "C:\Program Files (x86)\Windows Kits\10\Include\$env:WindowsSDKVersion\km\ntddk.h"
+          if (-Not (Test-Path $wdkPath)) {
+            Write-Error "WDK installation failed! Missing: $wdkPath"
+            exit 1
+          }
+          Write-Host "WDK successfully installed at $wdkPath"
+
+      # 使用 VS 2022 的 MSBuild 编译（自动识别 WDK 环境）
       - name: Build VmLoader
         run: |
-          msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:WindowsSDKVersion=10.0.26100.0
+          # 直接调用 VS 2022 的 MSBuild（已包含 WDK 路径）
+          "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" `
+            VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64
 
       - name: Upload Driver
         uses: actions/upload-artifact@v4
