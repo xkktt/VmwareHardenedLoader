@@ -1,4 +1,4 @@
-name: Build VmLoader
+name: Build VmLoader (FINAL)
 on:
   workflow_dispatch:
 
@@ -10,11 +10,21 @@ jobs:
         with:
           submodules: true
 
-      - name: 编译驱动
-        run: |
-          & "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\msbuild.exe" VmLoader\VmLoader.vcxproj /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
+      - name: 初始化 VS2022 x64 环境
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
 
-      - name: 上传成品
+      - name: 编译驱动（强制包含 WDK 内核头文件）
+        run: |
+          msbuild VmLoader\VmLoader.vcxproj ^
+          /t:Rebuild ^
+          /p:Configuration=Release ^
+          /p:Platform=x64 ^
+          /p:PlatformToolset=v143 ^
+          "/p:AdditionalIncludeDirectories=C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\km;C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\shared"
+
+      - name: 上传 vmloader.sys
         uses: actions/upload-artifact@v4
         with:
           name: VmLoader-x64
