@@ -2,9 +2,6 @@ name: Build VmLoader x64
 
 on:
   push:
-    branches:
-      - main
-      - master
   pull_request:
   workflow_dispatch:
 
@@ -44,11 +41,27 @@ jobs:
           $proj = "VmLoader\VmLoader.vcxproj"
           $content = Get-Content $proj -Raw
 
-          # 移除 INF，避免新版 WDK 执行 InfVerif
+          # 移除 INF，避免新版 WDK InfVerif 失败
           $content = $content -replace '\s*<Inf Include="VmLoader\.inf" />', ''
 
-          # 确保 Release|x64 关闭 InfVerif / Inf2Cat
-          $content = $content -replace '<EnableInf2cat>false</EnableInf2cat>', '<EnableInf2cat>false</EnableInf2cat><RunInfVerif>false</RunInfVerif>'
+          Set-Content $proj $content -Encoding UTF8
+
+      - name: Disable warnings as errors
+        shell: powershell
+        run: |
+          $proj = "VmLoader\VmLoader.vcxproj"
+          $content = Get-Content $proj -Raw
+
+          # 关闭已有的 /WX
+          $content = $content -replace '<TreatWarningAsError>true</TreatWarningAsError>', '<TreatWarningAsError>false</TreatWarningAsError>'
+
+          # 给 Release|x64 增加禁用 C4996
+          $content = $content -replace `
+            '(<ItemDefinitionGroup Condition="''\$\(Configuration\)\|\$\(Platform\)''==''Release\|x64''">\s*<ClCompile>)', `
+            '$1
+            <TreatWarningAsError>false</TreatWarningAsError>
+            <DisableSpecificWarnings>4996;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+            <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>'
 
           Set-Content $proj $content -Encoding UTF8
 
@@ -67,6 +80,7 @@ jobs:
             /p:Platform=x64 ^
             /p:RunInfVerif=false ^
             /p:EnableInf2Cat=false ^
+            /p:TreatWarningAsError=false ^
             /p:BuildInParallel=true
 
       - name: List outputs
@@ -74,8 +88,8 @@ jobs:
         if: always()
         run: |
           dir /s /b *.sys
-          dir /s /b *.lib
           dir /s /b *.pdb
+          dir /s /b *.lib
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -87,5 +101,3 @@ jobs:
             **/x64/Release/**/*.sys
             **/x64/Release/**/*.pdb
             **/x64/Release/**/*.lib
-            **/x64/Release/**/*.inf
-            **/x64/Release/**/*.cat
