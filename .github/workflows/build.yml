@@ -1,4 +1,4 @@
-name: Build VmLoader Driver
+name: Build VmLoader Driver (No Sign)
 
 on:
   push:
@@ -7,21 +7,22 @@ on:
 
 jobs:
   build:
-    runs-on: windows-2022
+    # 这个镜像 自带 VS2017 + WDK10，专门编译驱动！
+    runs-on: windows-2019
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup VS Developer Command Prompt
+      - name: 使用 VS2017 + WDK10 环境编译
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: amd64
-          spectre: true
+          vsversion: 2017
 
-      - name: Build x64 Release
+      - name: 编译 x64 Release 驱动
         run: |
-          msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:DriverKitVersion=Windows10
+          msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v141
 
-      - name: Upload driver
+      - name: 上传编译好的驱动
         uses: actions/upload-artifact@v4
         with:
           name: VmLoader-x64-Release
