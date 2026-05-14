@@ -2,26 +2,28 @@ name: Build VmLoader Driver (No Sign)
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:  # 允许手动点一下编译
+    branches: [ master, main ]
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install VS2017 Build Tools (v141)
+        run: |
+          choco install visualstudio2017-build-tools --no-progress --package-parameters "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.Windows10SDK.17763"
+
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
 
-      # 编译 x64 Release 驱动（不签名）
-      - name: Build VmLoader
+      - name: Build Driver x64 Release
         run: |
           msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v141
 
-      # 上传编译好的 sys 文件
-      - name: Upload Driver
+      - name: Upload compiled sys
         uses: actions/upload-artifact@v4
         with:
           name: VmLoader-x64-Release
