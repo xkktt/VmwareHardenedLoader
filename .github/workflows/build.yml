@@ -2,6 +2,9 @@ name: Build VmLoader x64
 
 on:
   push:
+    branches:
+      - main
+      - master
   pull_request:
   workflow_dispatch:
 
@@ -25,13 +28,16 @@ jobs:
         run: |
           choco install windowsdriverkit10 -y --no-progress
 
-      - name: Patch TargetVersion Windows7 to Windows10
+      - name: Patch project files for WDK 10
         shell: powershell
         run: |
           Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-            Write-Host "Patching TargetVersion in $($_.FullName)"
+            Write-Host "Patching target version in $($_.FullName)"
             $content = Get-Content $_.FullName -Raw
+
+            # Old project targets Windows7 kernel toolset. Modern GitHub runner has WDK 10.
             $content = $content -replace '<TargetVersion>Windows7</TargetVersion>', '<TargetVersion>Windows10</TargetVersion>'
+
             Set-Content $_.FullName $content -Encoding UTF8
           }
 
@@ -39,36 +45,70 @@ jobs:
         shell: powershell
         run: |
           $proj = "VmLoader\VmLoader.vcxproj"
-          $content = Get-Content $proj -Raw
 
-          # 移除 INF，避免新版 WDK InfVerif 失败
-          $content = $content -replace '\s*<Inf Include="VmLoader\.inf" />', ''
+          if (Test-Path $proj) {
+            Write-Host "Patching INF usage in $proj"
+            $content = Get-Content $proj -Raw
 
-          Set-Content $proj $content -Encoding UTF8
+            # Remove INF item from project to avoid strict InfVerif checks in newer WDK.
+            $content = $content -replace '\s*<Inf Include="VmLoader\.inf"\s*/>', ''
+
+            # Also try to disable related WDK validation properties.
+            $content = $content -replace '<RunInfVerif>true</RunInfVerif>', '<RunInfVerif>false</RunInfVerif>'
+            $content = $content -replace '<EnableInf2cat>true</EnableInf2cat>', '<EnableInf2cat>false</EnableInf2cat>'
+            $content = $content -replace '<EnableInf2Cat>true</EnableInf2Cat>', '<EnableInf2Cat>false</EnableInf2Cat>'
+
+            Set-Content $proj $content -Encoding UTF8
+          } else {
+            Write-Host "Project not found: $proj"
+          }
 
       - name: Disable warnings as errors
         shell: powershell
         run: |
-          $proj = "VmLoader\VmLoader.vcxproj"
-          $content = Get-Content $proj -Raw
+          Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
+            Write-Host "Disabling warnings as errors in $($_.FullName)"
+            $content = Get-Content $_.FullName -Raw
 
-          # 关闭已有的 /WX
-          $content = $content -replace '<TreatWarningAsError>true</TreatWarningAsError>', '<TreatWarningAsError>false</TreatWarningAsError>'
+            # Disable /WX if explicitly configured.
+            $content = $content -replace '<TreatWarningAsError>true</TreatWarningAsError>', '<TreatWarningAsError>false</TreatWarningAsError>'
+            $content = $content -replace '<TreatWarningsAsErrors>true</TreatWarningsAsErrors>', '<TreatWarningsAsErrors>false</TreatWarningsAsErrors>'
 
-          # 给 Release|x64 增加禁用 C4996
-          $content = $content -replace `
-            '(<ItemDefinitionGroup Condition="''\$\(Configuration\)\|\$\(Platform\)''==''Release\|x64''">\s*<ClCompile>)', `
-            '$1
-            <TreatWarningAsError>false</TreatWarningAsError>
-            <DisableSpecificWarnings>4996;%(DisableSpecificWarnings)</DisableSpecificWarnings>
-            <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>'
+            # Disable linker's /WX if explicitly configured.
+            $content = $content -replace '<TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>', '<TreatLinkerWarningAsErrors>false</TreatLinkerWarningAsErrors>'
 
-          Set-Content $proj $content -Encoding UTF8
+            # Add compiler options under every ClCompile section.
+            # /WX- forces warnings not to be errors.
+            # /wd4996 suppresses deprecated CRT/WDK API warnings like _vsnprintf and ExAllocatePoolWithTag.
+            # _CRT_SECURE_NO_WARNINGS suppresses CRT secure warnings.
+            $content = $content -replace '<ClCompile>', '<ClCompile>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <DisableSpecificWarnings>4996;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalOptions>/WX- /wd4996 %(AdditionalOptions)</AdditionalOptions>'
 
-      - name: Prepare output directory
-        shell: cmd
+            Set-Content $_.FullName $content -Encoding UTF8
+          }
+
+      - name: Disable driver signing for CI
+        shell: powershell
         run: |
-          if not exist bin mkdir bin
+          Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
+            Write-Host "Disabling driver signing in $($_.FullName)"
+            $content = Get-Content $_.FullName -Raw
+
+            # Disable WDK signing modes.
+            $content = $content -replace '<SignMode>TestSign</SignMode>', '<SignMode>Off</SignMode>'
+            $content = $content -replace '<SignMode>ProductionSign</SignMode>', '<SignMode>Off</SignMode>'
+
+            # Remove old local test certificate reference.
+            $content = $content -replace '<TestCertificate>.*?</TestCertificate>', ''
+
+            # If signing is accidentally still enabled, make signtool use SHA256 digest.
+            $content = $content -replace '<FileDigestAlgorithm>.*?</FileDigestAlgorithm>', '<FileDigestAlgorithm>SHA256</FileDigestAlgorithm>'
+
+            Set-Content $_.FullName $content -Encoding UTF8
+          }
 
       - name: Build Release x64
         shell: cmd
@@ -80,16 +120,28 @@ jobs:
             /p:Platform=x64 ^
             /p:RunInfVerif=false ^
             /p:EnableInf2Cat=false ^
+            /p:EnableInf2cat=false ^
             /p:TreatWarningAsError=false ^
+            /p:TreatWarningsAsErrors=false ^
+            /p:SignMode=Off ^
+            /p:FileDigestAlgorithm=SHA256 ^
             /p:BuildInParallel=true
 
-      - name: List outputs
+      - name: List build outputs
         shell: cmd
         if: always()
         run: |
-          dir /s /b *.sys
-          dir /s /b *.pdb
-          dir /s /b *.lib
+          echo ===== SYS files =====
+          dir /s /b *.sys 2>nul
+
+          echo ===== PDB files =====
+          dir /s /b *.pdb 2>nul
+
+          echo ===== LIB files =====
+          dir /s /b *.lib 2>nul
+
+          echo ===== x64 Release directory =====
+          dir /s /b x64\Release 2>nul
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -97,7 +149,11 @@ jobs:
         with:
           name: VmLoader-Release-x64
           path: |
-            bin/**
             **/x64/Release/**/*.sys
             **/x64/Release/**/*.pdb
             **/x64/Release/**/*.lib
+            **/x64/Release/**/*.map
+            **/x64/Release/**/*.exp
+            **/x64/Release/**/*.inf
+            **/x64/Release/**/*.cat
+          if-no-files-found: warn
