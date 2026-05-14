@@ -1,4 +1,4 @@
-name: Build VmLoader Driver (No Sign)
+name: Build VmLoader Driver
 
 on:
   push:
@@ -9,23 +9,19 @@ jobs:
   build:
     runs-on: windows-2022
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # 安装 WDK10 + 构建工具（解决 ntddk.h 找不到）
-      - name: Install WDK10 and build tools
-        uses: fslcommunity/wdk-installer@v1
+      - name: Setup VS Developer Command Prompt
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+          spectre: true
 
-      - name: Add MSBuild to PATH
-        uses: microsoft/setup-msbuild@v2
-
-      # 用 VS2022 编译驱动，自动匹配 WDK10
       - name: Build x64 Release
         run: |
-          msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
+          msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:DriverKitVersion=Windows10
 
-      # 上传编译好的驱动
-      - name: Upload compiled driver
+      - name: Upload driver
         uses: actions/upload-artifact@v4
         with:
           name: VmLoader-x64-Release
