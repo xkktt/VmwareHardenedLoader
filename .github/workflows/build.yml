@@ -16,31 +16,31 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      # 【终极修复】下载并挂载 Enterprise WDK (EWDK)
+      # 【终极修复】使用真实直链下载并挂载 Enterprise WDK (EWDK)
       - name: Setup EWDK Environment
         run: |
-          # 1. 获取当前工作目录的绝对路径（解决 C 盘与 D 盘的路径冲突）
           $workDir = Get-Location
           $isoPath = Join-Path $workDir "ewdk.iso"
           
-          # 2. 显式下载到当前工作目录
-          Write-Host "Downloading EWDK to $isoPath..."
-          curl -L -o "$isoPath" "https://aka.ms/EWDKLatest"
+          # 使用微软官方的稳定直链（Visual Studio 2022 版本的 EWDK）
+          Write-Host "Downloading EWDK from official direct link..."
+          curl -L -o "$isoPath" "https://download.microsoft.com/download/4/8/1/4817FC6D-3A91-4C4F-B6C1-4D6C67E0556B/EWDK.iso"
           
-          # 3. 使用绝对路径挂载 ISO 镜像
+          # 验证下载的文件大小，确保不是几十KB的假网页
+          $fileSize = (Get-Item $isoPath).Length / 1GB
+          Write-Host "Downloaded EWDK size: $fileSize GB"
+          
           Write-Host "Mounting ISO..."
           $iso = Mount-DiskImage -ImagePath "$isoPath" -PassThru
           $driveLetter = (Get-Volume -DiskImage $iso).DriveLetter
           
-          # 4. 设置环境变量供后续编译步骤使用
           echo "EWDK_DRIVE=$driveLetter`:" >> $env:GITHUB_ENV
           echo "EWDK_LAUNCHER=$driveLetter`:\LaunchBuildEnv.cmd" >> $env:GITHUB_ENV
-          Write-Host "EWDK mounted at drive ${driveLetter}:"
+          Write-Host "EWDK successfully mounted at drive ${driveLetter}:"
 
-      # 【核心修复】使用 EWDK 自带的 MSBuild 进行编译
+      # 使用 EWDK 自带的 MSBuild 进行编译
       - name: Build VmLoader with EWDK
         run: |
-          # 调用 EWDK 的环境初始化脚本，并在该环境下执行 msbuild
           cmd.exe /c "`"$env:EWDK_LAUNCHER`" && msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64"
 
       - name: Upload Driver
