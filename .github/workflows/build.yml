@@ -1,4 +1,4 @@
-name: Build VmLoader Driver (No Sign)
+name: Build VmLoader
 
 on:
   push:
@@ -7,22 +7,31 @@ on:
 
 jobs:
   build:
-    # 这个镜像 自带 VS2017 + WDK10，专门编译驱动！
-    runs-on: windows-2019
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
 
-      - name: 使用 VS2017 + WDK10 环境编译
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: amd64
-          vsversion: 2017
-
-      - name: 编译 x64 Release 驱动
+      # 1. 装 VS2017 生成工具 + Win10 SDK（解决 v141）
+      - name: Install VS2017 Build Tools & Win10 SDK
         run: |
-          msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v141
+          choco install visualstudio2017buildtools --yes --no-progress \
+            --package-parameters "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
+            --add Microsoft.VisualStudio.Component.Windows10SDK.17763"
 
-      - name: 上传编译好的驱动
+      # 2. 装 WDK10（解决 ntddk.h）
+      - name: Install WDK10
+        run: |
+          choco install windowsdriverkit-10 --yes --no-progress
+
+      # 3. 进 VS2017 环境编译，手动加 km 头路径
+      - name: Build x64 Release
+        run: |
+          & 'C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\Common7\Tools\VsDevCmd.bat' -arch=amd64
+          msbuild VmLoader.sln /t:Rebuild `
+            /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v141 `
+            "/p:AdditionalIncludeDirectories=C:\Program Files (x86)\Windows Kits\10\Include\10.0.17763.0\km"
+
+      - name: Upload driver
         uses: actions/upload-artifact@v4
         with:
           name: VmLoader-x64-Release
