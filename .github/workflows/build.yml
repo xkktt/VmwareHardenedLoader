@@ -1,4 +1,4 @@
-name: Build VmLoader Driver (No Sign)
+name: Build VmLoader Driver (WDK Fixed)
 
 on:
   push:
@@ -15,13 +15,13 @@ jobs:
 
       - name: Install Windows Driver Kit (WDK)
         run: |
-          # 1. 创建精准安装配置（仅WDK核心组件）
+          # 1. 创建精准安装配置（关键：指定SDK+WDK扩展包）
           $vsConfig = @"
           {
             "version": "1.0",
             "components": [
-              "Microsoft.VisualStudio.Component.Windows11SDK.22621",
-              "Microsoft.VisualStudio.Component.WindowsDriverKit"
+              "Microsoft.VisualStudio.Component.Windows11SDK.22621",  # Windows 11 SDK
+              "Microsoft.VisualStudio.ComponentGroup.NativeDesktop.WDK"  # 【修正】WDK扩展包
             ]
           }
           "@
@@ -36,42 +36,47 @@ jobs:
             --passive `
             --norestart
           
-          # 3. 【关键修复】强制刷新环境变量
+          # 3. 强制刷新环境变量
           $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + 
                       [System.Environment]::GetEnvironmentVariable("Path", "User")
           
-          # 4. 【关键修复】等待SDK注册完成（必须！）
-          Write-Host "Waiting for Windows SDK registration (60 seconds)..."
-          Start-Sleep -Seconds 60
-
-          # 5. 智能检测已安装的SDK版本（避免环境变量问题）
-          $sdkRoot = "C:\Program Files (x86)\Windows Kits\10\Include"
-          $validVersions = Get-ChildItem $sdkRoot | 
-                           Where-Object { $_.PSIsContainer -and $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } |
-                           Sort-Object Name -Descending
+          # 4. 【关键修正】只检查WDK实际安装的版本
+          $expectedSdk = "10.0.22621.0"
+          $ntddkPath = "C:\Program Files (x86)\Windows Kits\10\Include\$expectedSdk\km\ntddk.h"
           
-          if (-not $validVersions) {
-            Write-Error "No valid Windows SDK version found in $sdkRoot"
-            exit 1
+          # 5. 验证WDK头文件是否存在（等待+重试机制）
+          $maxRetries = 5
+          $retryInterval = 10
+          
+          for ($i = 0; $i -lt $maxRetries; $i++) {
+            if (Test-Path $ntddkPath) {
+              Write-Host "✅ WDK headers confirmed at $ntddkPath"
+              echo "WindowsSDKVersion=$expectedSdk" >> $env:GITHUB_ENV
+              exit 0
+            }
+            
+            Write-Host "⏳ Waiting for WDK headers to register... (Attempt $($i+1)/$maxRetries)"
+            Start-Sleep -Seconds $retryInterval
           }
           
-          $selectedVersion = $validVersions[0].Name
-          Write-Host "✅ Successfully detected Windows SDK $selectedVersion"
+          # 6. 最终验证失败
+          Write-Error @"
+          WDK installation FAILED!
+          Expected file missing: $ntddkPath
           
-          # 6. 验证关键文件（使用检测到的版本）
-          $ntddkPath = Join-Path $sdkRoot $selectedVersion "km" "ntddk.h"
-          if (-not (Test-Path $ntddkPath)) {
-            Write-Error "Critical error: ntddk.h missing at $ntddkPath"
-            exit 1
-          }
+          Possible causes:
+          1. Incorrect WDK component selected (must use 'NativeDesktop.WDK')
+          2. VS Installer timed out (check logs for 'vs_installer.exe' errors)
+          3. Disk space issue (WDK requires 3+ GB free space)
           
-          # 7. 将版本写入环境变量（供后续步骤使用）
-          echo "WindowsSDKVersion=$selectedVersion" >> $env:GITHUB_ENV
-          Write-Host "WDK installation verified with SDK $selectedVersion"
+          Run this in failed job to debug:
+          Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\Include' -Recurse | Where-Object Name -eq ntddk.h
+          "@
+          exit 1
 
       - name: Build VmLoader
         run: |
-          # 使用检测到的SDK版本编译
+          # 显式指定SDK版本（避免自动选择最新版）
           msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 `
                 /p:WindowsSDKVersion=$env:WindowsSDKVersion
 
