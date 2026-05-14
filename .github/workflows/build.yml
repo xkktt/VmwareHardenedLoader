@@ -1,4 +1,4 @@
-name: Build VmLoader Final
+name: Build VmLoader
 on:
   workflow_dispatch:
 
@@ -10,12 +10,12 @@ jobs:
         with:
           submodules: true
 
-      - name: Build only VmLoader (skip capstone)
+      - name: 编译驱动
         run: |
-          msbuild VmLoader\VmLoader.vcxproj /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
+          & "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\msbuild.exe" VmLoader\VmLoader.vcxproj /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
 
-      - name: Upload driver
+      - name: 上传成品
         uses: actions/upload-artifact@v4
         with:
-          name: VmLoader-x64-Release
+          name: VmLoader-x64
           path: bin/x64/Release/vmloader.sys
