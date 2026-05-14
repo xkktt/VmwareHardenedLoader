@@ -16,18 +16,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      # 【核心修复】自动下载并静默安装最新版 WDK
+      # 【修复】自动下载并安装最新版 WDK
       - name: Install WDK
         run: |
+          # 1. 下载安装包
           curl -L -o wdksetup.exe "https://go.microsoft.com/fwlink/?linkid=2249371"
-          start /wait wdksetup.exe /quiet
+          
+          # 2. 使用 Start-Process 并通过 -ArgumentList 传递参数
+          # -Wait 表示等待安装完成
+          # -ArgumentList "/quiet" 表示将 /quiet 作为参数传给 wdksetup.exe
+          Start-Process -FilePath "wdksetup.exe" -ArgumentList "/quiet" -Wait
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
 
       # 编译 x64 Release 驱动
-      # 移除了 PlatformToolset 参数以适配最新的 VS 2026 环境
-      # 显式指定 WindowsSDKVersion 确保 WDK 能找到匹配的 ntddk.h
       - name: Build VmLoader
         run: |
           msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:WindowsSDKVersion=10.0.26100.0
