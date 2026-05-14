@@ -1,70 +1,26 @@
-name: Build VmLoader Driver (WDK Guaranteed)
+name: Build VmLoader Driver (No Sign)
 
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:
+  workflow_dispatch:  # 允许手动点一下编译
 
 jobs:
   build:
-    runs-on: windows-2022  # 必须指定 2022 镜像（非 latest）
-    
+    runs-on: windows-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
-      - name: Force WDK reinstall via DISM (critical fix)
-        run: |
-          # 1. 【核心修复】强制删除预装的"残缺"SDK
-          Write-Host "Removing pre-installed SDK remnants..."
-          reg delete "HKLM\SOFTWARE\Microsoft\Windows Kits\Installed Products\Windows Software Development Kit - Windows 11 Version 22H2 (10.0.22621.0)" /f
-          Remove-Item -Path "C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0" -Recurse -Force -ErrorAction Ignore
-          
-          # 2. 通过 DISM 安装纯净版 SDK（绕过 VS Installer 的缺陷）
-          Write-Host "Installing clean Windows 11 SDK via DISM..."
-          $sdkUrl = "https://go.microsoft.com/fwlink/?linkid=2233040"  # 官方 SDK 22621 下载链接
-          $sdkExe = "$env:TEMP\winsdksetup.exe"
-          Invoke-WebRequest -Uri $sdkUrl -OutFile $sdkExe
-          
-          # 3. 静默安装（关键参数：/ceip off /norestart /quiet）
-          Start-Process -Wait -FilePath $sdkExe -ArgumentList "/ceip off /norestart /quiet"
-          
-          # 4. 【关键验证】检查 km 目录是否创建
-          $ntddkPath = "C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\km\ntddk.h"
-          $maxRetries = 12  # 最多等待 2 分钟
-          
-          for ($i = 0; $i -lt $maxRetries; $i++) {
-            if (Test-Path $ntddkPath) {
-              Write-Host "✅ WDK headers confirmed at $ntddkPath"
-              echo "WindowsSDKVersion=10.0.22621.0" >> $env:GITHUB_ENV
-              exit 0
-            }
-            Write-Host "⏳ Waiting for WDK headers... (Attempt $($i+1)/$maxRetries)"
-            Start-Sleep -Seconds 10
-          }
-          
-          # 5. 失败诊断（比之前更详细）
-          Write-Error @"
-          WDK INSTALLATION FAILED - CRITICAL DIAGNOSTICS:
-          
-          1. SDK Directory Status:
-          $(Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Include" -ErrorAction SilentlyContinue | Out-String)
-          
-          2. DISM Installation Log:
-          $(Get-Content "$env:TEMP\WindowsSDKInstaller.log" -ErrorAction SilentlyContinue | Select-Object -Last 20)
-          
-          3. Common Fixes:
-          - Ensure 'windows-2022' (not 'latest') is used
-          - Verify DISM didn't timeout (needs 8+ min)
-          - Check disk space (C: must have >5GB free)
-          "@
-          exit 1
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
 
+      # 编译 x64 Release 驱动（不签名）
       - name: Build VmLoader
         run: |
-          msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 `
-                /p:WindowsSDKVersion=$env:WindowsSDKVersion
+          msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v141
 
+      # 上传编译好的 sys 文件
       - name: Upload Driver
         uses: actions/upload-artifact@v4
         with:
