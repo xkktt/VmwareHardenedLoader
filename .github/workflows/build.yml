@@ -12,18 +12,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install VS2017 Build Tools (v141)
-        run: |
-          choco install visualstudio2017-build-tools --no-progress --package-parameters "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.Windows10SDK.17763"
-
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
 
-      - name: Build Driver x64 Release
+      # 直接用 VS2022 兼容编译 v141，不需要安装任何额外工具
+      - name: Build x64 Release
         run: |
-          msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v141
+          msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0.17763.0
 
-      - name: Upload compiled sys
+      - name: Upload driver
         uses: actions/upload-artifact@v4
         with:
           name: VmLoader-x64-Release
