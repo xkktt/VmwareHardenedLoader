@@ -16,19 +16,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
+      # 【核心修复】自动下载并静默安装最新版 WDK
+      - name: Install WDK
+        run: |
+          curl -L -o wdksetup.exe "https://go.microsoft.com/fwlink/?linkid=2249371"
+          start /wait wdksetup.exe /quiet
+
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
 
-      # 打印当前环境的可用工具集版本，方便确认环境
-      - name: Check Environment
-        run: msbuild -version
-
-      # 编译 x64 Release 驱动（使用最新的 v143 工具集）
+      # 编译 x64 Release 驱动
+      # 移除了 PlatformToolset 参数以适配最新的 VS 2026 环境
+      # 显式指定 WindowsSDKVersion 确保 WDK 能找到匹配的 ntddk.h
       - name: Build VmLoader
         run: |
-          msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
+          msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:WindowsSDKVersion=10.0.26100.0
 
-      # 上传编译好的 sys 文件
       - name: Upload Driver
         uses: actions/upload-artifact@v4
         with:
