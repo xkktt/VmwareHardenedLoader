@@ -32,11 +32,25 @@ jobs:
         shell: powershell
         run: |
           Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-            Write-Host "Patching $($_.FullName)"
+            Write-Host "Patching TargetVersion in $($_.FullName)"
             $content = Get-Content $_.FullName -Raw
             $content = $content -replace '<TargetVersion>Windows7</TargetVersion>', '<TargetVersion>Windows10</TargetVersion>'
             Set-Content $_.FullName $content -Encoding UTF8
           }
+
+      - name: Disable INF verification for CI
+        shell: powershell
+        run: |
+          $proj = "VmLoader\VmLoader.vcxproj"
+          $content = Get-Content $proj -Raw
+
+          # 移除 INF，避免新版 WDK 执行 InfVerif
+          $content = $content -replace '\s*<Inf Include="VmLoader\.inf" />', ''
+
+          # 确保 Release|x64 关闭 InfVerif / Inf2Cat
+          $content = $content -replace '<EnableInf2cat>false</EnableInf2cat>', '<EnableInf2cat>false</EnableInf2cat><RunInfVerif>false</RunInfVerif>'
+
+          Set-Content $proj $content -Encoding UTF8
 
       - name: Prepare output directory
         shell: cmd
@@ -50,7 +64,18 @@ jobs:
             /m ^
             /t:Build ^
             /p:Configuration=Release ^
-            /p:Platform=x64
+            /p:Platform=x64 ^
+            /p:RunInfVerif=false ^
+            /p:EnableInf2Cat=false ^
+            /p:BuildInParallel=true
+
+      - name: List outputs
+        shell: cmd
+        if: always()
+        run: |
+          dir /s /b *.sys
+          dir /s /b *.lib
+          dir /s /b *.pdb
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
