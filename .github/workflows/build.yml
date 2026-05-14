@@ -2,9 +2,6 @@ name: Build VmLoader x64
 
 on:
   push:
-    branches:
-      - main
-      - master
   pull_request:
   workflow_dispatch:
 
@@ -28,86 +25,51 @@ jobs:
         run: |
           choco install windowsdriverkit10 -y --no-progress
 
-      - name: Patch TargetVersion to Windows10
+      - name: Patch project files
         shell: powershell
         run: |
           Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-            Write-Host "Patching TargetVersion in $($_.FullName)"
+            Write-Host "Patching $($_.FullName)"
+
             $content = Get-Content $_.FullName -Raw
+
+            # WDK target version
             $content = $content -replace '<TargetVersion>Windows7</TargetVersion>', '<TargetVersion>Windows10</TargetVersion>'
+
+            # Disable warnings as errors
+            $content = $content -replace '<TreatWarningAsError>true</TreatWarningAsError>', '<TreatWarningAsError>false</TreatWarningAsError>'
+            $content = $content -replace '<TreatWarningsAsErrors>true</TreatWarningsAsErrors>', '<TreatWarningsAsErrors>false</TreatWarningsAsErrors>'
+            $content = $content -replace '<TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>', '<TreatLinkerWarningAsErrors>false</TreatLinkerWarningAsErrors>'
+
+            # Suppress C4996 and force /WX-
+            $content = $content -replace '<ClCompile>', '<ClCompile><TreatWarningAsError>false</TreatWarningAsError><DisableSpecificWarnings>4996;%(DisableSpecificWarnings)</DisableSpecificWarnings><PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions><AdditionalOptions>/WX- /wd4996 %(AdditionalOptions)</AdditionalOptions>'
+
+            # Disable driver signing
+            $content = $content -replace '<SignMode>TestSign</SignMode>', '<SignMode>Off</SignMode>'
+            $content = $content -replace '<SignMode>ProductionSign</SignMode>', '<SignMode>Off</SignMode>'
+            $content = $content -replace '<TestCertificate>.*?</TestCertificate>', ''
+            $content = $content -replace '<FileDigestAlgorithm>.*?</FileDigestAlgorithm>', '<FileDigestAlgorithm>SHA256</FileDigestAlgorithm>'
+
+            # Disable INF checks if present
+            $content = $content -replace '<RunInfVerif>true</RunInfVerif>', '<RunInfVerif>false</RunInfVerif>'
+            $content = $content -replace '<EnableInf2cat>true</EnableInf2cat>', '<EnableInf2cat>false</EnableInf2cat>'
+            $content = $content -replace '<EnableInf2Cat>true</EnableInf2Cat>', '<EnableInf2Cat>false</EnableInf2Cat>'
+
             Set-Content $_.FullName $content -Encoding UTF8
           }
 
-      - name: Disable INF verification
+      - name: Remove INF from VmLoader project
         shell: powershell
         run: |
           $proj = "VmLoader\VmLoader.vcxproj"
 
           if (Test-Path $proj) {
-            Write-Host "Patching INF settings in $proj"
-
+            Write-Host "Removing INF item from $proj"
             $content = Get-Content $proj -Raw
-
-            # Remove INF item from project.
             $content = $content -replace '\s*<Inf Include="VmLoader\.inf"\s*/>', ''
-
-            # Disable INF verification properties if present.
-            $content = $content -replace '<RunInfVerif>true</RunInfVerif>', '<RunInfVerif>false</RunInfVerif>'
-            $content = $content -replace '<EnableInf2cat>true</EnableInf2cat>', '<EnableInf2cat>false</EnableInf2cat>'
-            $content = $content -replace '<EnableInf2Cat>true</EnableInf2Cat>', '<EnableInf2Cat>false</EnableInf2Cat>'
-
             Set-Content $proj $content -Encoding UTF8
           } else {
-            Write-Host "Project not found: $proj"
-          }
-
-      - name: Disable warnings as errors
-        shell: powershell
-        run: |
-          Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-            Write-Host "Patching warnings in $($_.FullName)"
-
-            $content = Get-Content $_.FullName -Raw
-
-            # Disable existing warning-as-error settings.
-            $content = $content -replace '<TreatWarningAsError>true</TreatWarningAsError>', '<TreatWarningAsError>false</TreatWarningAsError>'
-            $content = $content -replace '<TreatWarningsAsErrors>true</TreatWarningsAsErrors>', '<TreatWarningsAsErrors>false</TreatWarningsAsErrors>'
-            $content = $content -replace '<TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>', '<TreatLinkerWarningAsErrors>false</TreatLinkerWarningAsErrors>'
-
-            # Add safe compiler options into every ClCompile node.
-            $insert = @"
-          <TreatWarningAsError>false</TreatWarningAsError>
-          <DisableSpecificWarnings>4996;%(DisableSpecificWarnings)</DisableSpecificWarnings>
-          <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-          <AdditionalOptions>/WX- /wd4996 %(AdditionalOptions)</AdditionalOptions>
-"@
-
-            $content = $content -replace '<ClCompile>', "<ClCompile>`r`n$insert"
-
-            Set-Content $_.FullName $content -Encoding UTF8
-          }
-
-      - name: Disable driver signing
-        shell: powershell
-        run: |
-          Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-            Write-Host "Patching signing in $($_.FullName)"
-
-            $content = Get-Content $_.FullName -Raw
-
-            # Disable WDK signing modes.
-            $content = $content -replace '<SignMode>TestSign</SignMode>', '<SignMode>Off</SignMode>'
-            $content = $content -replace '<SignMode>ProductionSign</SignMode>', '<SignMode>Off</SignMode>'
-
-            # Remove old local certificate reference.
-            $content = $content -replace '<TestCertificate>.*?</TestCertificate>', ''
-
-            # If signing somehow remains enabled, use SHA256 file digest.
-            if ($content -match '<FileDigestAlgorithm>') {
-              $content = $content -replace '<FileDigestAlgorithm>.*?</FileDigestAlgorithm>', '<FileDigestAlgorithm>SHA256</FileDigestAlgorithm>'
-            }
-
-            Set-Content $_.FullName $content -Encoding UTF8
+            Write-Host "Project file not found: $proj"
           }
 
       - name: Build Release x64
