@@ -1,4 +1,4 @@
-name: Build VmLoader
+name: Build VmLoader Final
 on:
   workflow_dispatch:
 
@@ -8,19 +8,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: true  # 🔥 这里是关键！拉子模块！
-          fetch-depth: 0
+          submodules: true
 
-      - uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
-      - name: Build driver
+      - name: Build only VmLoader (skip capstone)
         run: |
-          msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
+          msbuild VmLoader\VmLoader.vcxproj /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
 
-      - name: Upload sys
+      - name: Upload driver
         uses: actions/upload-artifact@v4
         with:
-          name: VmLoader-x64
+          name: VmLoader-x64-Release
           path: bin/x64/Release/vmloader.sys
