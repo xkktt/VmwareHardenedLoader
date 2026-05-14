@@ -5,9 +5,6 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build:
     runs-on: windows-latest
@@ -16,36 +13,30 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      # 【终极修复】使用真实直链下载并挂载 Enterprise WDK (EWDK)
-      - name: Setup EWDK Environment
+      # 【官方推荐】安装匹配的 Windows SDK + WDK
+      - name: Install Windows Driver Kit (WDK)
         run: |
-          $workDir = Get-Location
-          $isoPath = Join-Path $workDir "ewdk.iso"
+          # 1. 下载 Windows SDK 安装程序（这是微软官方支持的直链）
+          curl -L -o winsdksetup.exe "https://go.microsoft.com/fwlink/p/?linkid=2233060"
           
-          # 使用微软官方的稳定直链（Visual Studio 2022 版本的 EWDK）
-          Write-Host "Downloading EWDK from official direct link..."
-          curl -L -o "$isoPath" "https://download.microsoft.com/download/4/8/1/4817FC6D-3A91-4C4F-B6C1-4D6C67E0556B/EWDK.iso"
+          # 2. 静默安装指定版本的 WDK（关键：/features OptionId.WindowsDriverKit）
+          Start-Process winsdksetup.exe -ArgumentList `
+            "/features OptionId.WindowsDriverKit /version:10.0.26100.0 /quiet /norestart" `
+            -Wait -NoNewWindow
           
-          # 验证下载的文件大小，确保不是几十KB的假网页
-          $fileSize = (Get-Item $isoPath).Length / 1GB
-          Write-Host "Downloaded EWDK size: $fileSize GB"
-          
-          Write-Host "Mounting ISO..."
-          $iso = Mount-DiskImage -ImagePath "$isoPath" -PassThru
-          $driveLetter = (Get-Volume -DiskImage $iso).DriveLetter
-          
-          echo "EWDK_DRIVE=$driveLetter`:" >> $env:GITHUB_ENV
-          echo "EWDK_LAUNCHER=$driveLetter`:\LaunchBuildEnv.cmd" >> $env:GITHUB_ENV
-          Write-Host "EWDK successfully mounted at drive ${driveLetter}:"
+          # 3. 验证安装（检查 ntddk.h 是否存在）
+          if (-Not (Test-Path "C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\km\ntddk.h")) {
+            throw "WDK installation failed! ntddk.h is missing."
+          }
+          Write-Host "WDK 10.0.26100.0 successfully installed"
 
-      # 使用 EWDK 自带的 MSBuild 进行编译
-      - name: Build VmLoader with EWDK
+      # 使用标准 MSBuild 编译（现在系统已包含正确 WDK）
+      - name: Build VmLoader
         run: |
-          cmd.exe /c "`"$env:EWDK_LAUNCHER`" && msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64"
+          msbuild VmLoader.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:WindowsSDKVersion=10.0.26100.0
 
       - name: Upload Driver
         uses: actions/upload-artifact@v4
         with:
           name: VmLoader-x64-Release
           path: bin/x64/Release/vmloader.sys
-          if-no-files-found: error
